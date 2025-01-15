@@ -19,8 +19,8 @@ export const getAllUsers = async (_req: Request, res: Response) => {
 };
 
 export const getSpecificUser = async (req: Request, res: Response) => {
-  const username = req.params.username; 
-  const query: { username: string } = { username: username };
+  const email = req.params.email; 
+  const query: { email: string } = { email: email };
 
   try {
     if (!collections.Users) {
@@ -32,7 +32,7 @@ export const getSpecificUser = async (req: Request, res: Response) => {
     if (user) {
       res.status(200).send(user);
     } else {
-      res.status(404).send(`User with username ${username} not found`);
+      res.status(404).send(`User with email ${email} not found`);
     }
   } catch (error) {
     console.error(error);

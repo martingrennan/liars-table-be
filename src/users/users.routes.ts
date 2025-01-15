@@ -19,7 +19,7 @@ usersRouter.use(express.json());
 usersRouter.get("/api/users", getAllUsers);
 
 //get specific user
-usersRouter.get("/api/users/:username", getSpecificUser);
+usersRouter.get("/api/users/:email", getSpecificUser);
 
 // POST
 usersRouter.post("/api/users", createUser);
