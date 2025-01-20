@@ -19,10 +19,12 @@ const io = new Server(server, {
 
 setupSockets(io);
 
-const PORT = 8080;
-server.listen(PORT, () => {
+const PORT: number = Number(process.env.PORT) || 8080; // process.env.PORT is a string, so we convert it to a number
+server.listen(PORT,  () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
+
+
 
 connectToDatabase()
   .then(() => {
