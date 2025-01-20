@@ -1,12 +1,23 @@
 // External Dependencies
-import express, {Request, Response, NextFunction} from "express";
-import { changeUser, createUser, deleteUser, getAllUsers, getSpecificUser } from './users.controller'
-import middleware from "../middleware"
-const cors = require('cors')
+import express, { Request, Response, NextFunction } from "express";
+import {
+  changeUser,
+  createUser,
+  deleteUser,
+  getAllUsers,
+  getSpecificUser,
+} from "./users.controller";
+const cors = require("cors");
+import { Server } from "socket.io";
+import http from "http";
+import { app } from "../index";
+const server = http.createServer(app);
+const io = new Server(server);
 
 export const usersRouter = express.Router();
-usersRouter.use(cors())
+usersRouter.use(cors());
 usersRouter.use(express.json());
+
 // usersRouter.use(async (req: Request, res: Response, next: NextFunction) => {
 //     try {
 //       await middleware.decodeToken(req, res, next);
@@ -16,6 +27,7 @@ usersRouter.use(express.json());
 //   });
 
 // get all users
+
 usersRouter.get("/api/users", getAllUsers);
 
 //get specific user
