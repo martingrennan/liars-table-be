@@ -281,6 +281,7 @@ export const setupSockets = (io: Server) => {
         }
 
         room.isGameStarted = true;
+        console.log(room.isGameStarted, "In startGame");
         room.currentTurnIndex = 0;
         const currentPlayer = room.players[room.currentTurnIndex];
         io.to(roomName).emit("turnUpdate", {
@@ -327,6 +328,7 @@ export const setupSockets = (io: Server) => {
       ({ roomName, discardedCards }, callback: Function) => {
         try {
           const room = availableRooms.find((r) => r.roomName === roomName);
+          console.log(room?.isGameStarted, "In DiscardPile Socket");
           if (!room || !room.isGameStarted) {
             callback({ success: false, message: "Game not in progress" });
             return;
