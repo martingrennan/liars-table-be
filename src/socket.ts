@@ -4,8 +4,7 @@ interface Player {
   socketId: string;
   username: string;
   avatar: string;
-  hand: any[]; // need the array to be dynamic for now
-  slot: any; // we need the slot to dynamically adjust with code logic. Specifics are not ideal for now.
+  hand: any[];
 }
 
 interface Room {
@@ -15,7 +14,6 @@ interface Room {
   playerCount: number;
   players: Player[];
   currentTurnIndex: number;
-  turnTimer?: NodeJS.Timeout;
 }
 
 // Moved this here to store rooms at module level to persist across connections - previously i accidentally placed it inside the io.on
@@ -46,60 +44,6 @@ export const setupSockets = (io: Server) => {
     };
 
     socket.on(
-      "createRoom",
-      async (
-        room: {
-          roomName: string;
-          password: string;
-          username: string;
-          avatar: string;
-        },
-        callback: Function
-      ) => {
-        try {
-          const { roomName, password, username, avatar } = room;
-          const validRoom = availableRooms.find((r) => r.roomName === roomName);
-          if (validRoom) {
-            callback({ success: false, message: "Room name already exists" });
-            return;
-          }
-
-          const newRoom: Room = {
-            roomName,
-            isPrivate: Boolean(password && password.length > 0),
-            password: password || null,
-            playerCount: 1,
-            players: [
-              {
-                socketId: socket.id,
-                username,
-                avatar,
-                hand: [],
-                slot: "top",
-              },
-            ],
-            currentTurnIndex: 0,
-          };
-
-          availableRooms.push(newRoom);
-          await socket.join(roomName);
-
-          console.log("Room created successfully:", newRoom);
-          io.emit("activeRooms", availableRooms);
-          callback({ success: true, message: "Room created successfully" });
-        } catch (error) {
-          console.error("Error creating room:", error);
-          callback({ success: false, message: "Failed to create room" });
-        }
-      }
-    );
-    socket.on("requestActiveRooms", () => {
-      console.log("Active rooms requested");
-      logRooms();
-      socket.emit("activeRooms", availableRooms);
-    });
-
-    socket.on(
       "joinRoom",
       async (
         roomName: string,
@@ -111,50 +55,186 @@ export const setupSockets = (io: Server) => {
         callback: Function
       ) => {
         try {
+          console.log(
+            `Join room attempt - Room: ${roomName}, User: ${username}`
+          );
+
+          // Validate callback
+          if (typeof callback !== "function") {
+            console.error("Callback is not provided or not a function");
+            return;
+          }
+
+          // Validate user details
+          if (!username || !avatar) {
+            console.log("Missing user details");
+            callback({ success: false, message: "Missing user details." });
+            return;
+          }
+
+          // Find room
           const roomIndex = availableRooms.findIndex(
             (r) => r.roomName === roomName
           );
-
           if (roomIndex === -1) {
-            callback({ success: false, message: "Room not found" });
+            console.log(`Room not found: ${roomName}`);
+            callback({ success: false, message: "Room not found." });
             return;
           }
 
           const room = availableRooms[roomIndex];
+          console.log("Current room state:", {
+            name: room.roomName,
+            playerCount: room.playerCount,
+            players: room.players,
+          });
+
+          // Check room access
           if (room.isPrivate && room.password !== password) {
-            callback({ success: false, message: "Incorrect password" });
+            console.log("Incorrect password attempt");
+            callback({ success: false, message: "Incorrect password." });
             return;
           }
+
+          // Check room capacity
           if (room.playerCount >= 4) {
-            callback({ success: false, message: "Room is full" });
+            console.log("Room is full");
+            callback({ success: false, message: "Room is full." });
             return;
           }
 
-          const availableSlots = ["top", "right", "bottom", "left"];
-          const usedSlots = room.players.map((player) => player.slot);
-          const availableSlot =
-            availableSlots.find((slot) => !usedSlots.includes(slot)) || "top"; // default to "top" if no slots are available
-
+          // Create new player without slot assignment
           const newPlayer: Player = {
             socketId: socket.id,
             username,
             avatar,
             hand: [],
-            slot: availableSlot,
           };
+
+          // Add player to room
           room.players.push(newPlayer);
           room.playerCount++;
-          await socket.join(roomName);
-          io.emit("activeRooms", availableRooms);
-          io.to(roomName).emit("playerJoined", room.players);
 
-          callback({ success: true, message: "Successfully joined room" });
+          // Join the socket room
+          await socket.join(roomName);
+          console.log(`Socket ${socket.id} joined room ${roomName}`);
+
+          // Emit updated players to room with current player identifier
+          io.to(roomName).emit("playerJoined", {
+            players: room.players,
+            currentPlayerSocketId: socket.id,
+          });
+          console.log(
+            "Emitted playerJoined event to room:",
+            roomName,
+            "with players:",
+            room.players,
+            "currentPlayer:",
+            socket.id
+          );
+
+          // Update room list for all clients
+          io.emit("activeRooms", availableRooms);
+          console.log("Emitted activeRooms event with updated rooms");
+
+          // Send success callback
+          callback({ success: true, message: "Successfully joined room." });
+
+          // Log final state
+          console.log("Updated room state:", {
+            name: room.roomName,
+            playerCount: room.playerCount,
+            players: room.players,
+          });
         } catch (error) {
-          console.error("Error joining room:", error);
-          callback({ success: false, message: "Failed to join room" });
+          console.error(`Error joining room ${roomName}:`, error);
+          if (typeof callback === "function") {
+            callback({ success: false, message: "Failed to join room." });
+          }
         }
       }
     );
+
+    socket.on(
+      "createRoom",
+      async (
+        room: {
+          roomName: string;
+          password: string;
+          username: string;
+          avatar: string;
+        },
+        callback: Function
+      ) => {
+        try {
+          console.log("Received createRoom request:", room);
+          const { roomName, password, username, avatar } = room;
+
+          const validRoom = availableRooms.find(
+            (room) => room.roomName === roomName
+          );
+
+          if (validRoom) {
+            console.log("Room creation failed: Room name already exists");
+            callback({
+              success: false,
+              message: "Room name already exists",
+            });
+            return;
+          }
+          const firstPlayer: Player = {
+            socketId: socket.id,
+            username,
+            avatar,
+            hand: [],
+          };
+          const newRoom: Room = {
+            roomName,
+            isPrivate: Boolean(password && password.length > 0),
+            password: password || null,
+            playerCount: 1,
+            players: [firstPlayer], // Add the creator as first player
+            currentTurnIndex: 0,
+          };
+          availableRooms.push(newRoom);
+          await socket.join(roomName);
+          io.to(roomName).emit("playerJoined", newRoom.players);
+          console.log("Room created successfully:", newRoom);
+          logRooms();
+          io.emit("activeRooms", availableRooms);
+          callback({
+            success: true,
+            message: "Room created successfully",
+          });
+        } catch (error) {
+          console.error("Error creating room:", error);
+          callback({
+            success: false,
+            message: "Failed to create room",
+          });
+        }
+      }
+    );
+
+    socket.on("requestRoomState", (roomName: string, callback: Function) => {
+      try {
+        const room = availableRooms.find((r) => r.roomName === roomName);
+        if (room) {
+          callback({ success: true, players: room.players });
+        } else {
+          callback({ success: false, message: "Room not found" });
+        }
+      } catch (error) {
+        console.error("Error getting room state:", error);
+        callback({ success: false, message: "Error getting room state" });
+      }
+    });
+
+    socket.on("requestActiveRooms", () => {
+      console.log("Active rooms requested");
+      logRooms();
+      socket.emit("activeRooms", availableRooms);
+    });
 
     socket.on("leaveRoom", (roomName: string, callback: Function) => {
       handlePlayerLeave(socket, roomName, callback);
@@ -196,9 +276,9 @@ export const setupSockets = (io: Server) => {
       room.players.splice(playerIndex, 1);
       room.playerCount--;
 
-      if (room.turnTimer && room.players.length === 0) {
-        clearTimeout(room.turnTimer);
-      }
+      // if (room.turnTimer && room.players.length === 0) {
+      //   clearTimeout(room.turnTimer);
+      // }
       if (room.playerCount <= 0) {
         availableRooms.splice(roomIndex, 1);
       }
@@ -233,18 +313,19 @@ export const setupSockets = (io: Server) => {
         }
       });
     });
-    function startTurn(io: Server, room: Room) {
-      const currentPlayer = room.players[room.currentTurnIndex];
+    //   function startTurn(io: Server, room: Room) {
+    //     const currentPlayer = room.players[room.currentTurnIndex];
 
-      io.to(currentPlayer.socketId).emit("yourTurn", true);
-      io.to(room.roomName).emit("updateTurn", currentPlayer);
+    //     io.to(currentPlayer.socketId).emit("yourTurn", true);
+    //     io.to(room.roomName).emit("updateTurn", currentPlayer);
 
-      room.turnTimer = setTimeout(() => {
-        io.to(currentPlayer.socketId).emit("turnTimedOut");
-        room.currentTurnIndex =
-          (room.currentTurnIndex + 1) % room.players.length;
-        startTurn(io, room);
-      }, 10000);
-    }
+    //     room.turnTimer = setTimeout(() => {
+    //       io.to(currentPlayer.socketId).emit("turnTimedOut");
+    //       room.currentTurnIndex =
+    //         (room.currentTurnIndex + 1) % room.players.length;
+    //       startTurn(io, room);
+    //     }, 10000);
+    //   }
+    // });
   });
 };
