@@ -198,8 +198,10 @@ export const setupSockets = (io: Server) => {
           };
           availableRooms.push(newRoom);
           await socket.join(roomName);
-          io.to(roomName).emit("playerJoined", newRoom.players);
-          console.log("Room created successfully:", newRoom);
+          io.to(roomName).emit("playerJoined", {
+            players: newRoom.players,
+            currentPlayerSocketId: socket.id,
+          });
           logRooms();
           io.emit("activeRooms", availableRooms);
           callback({
@@ -236,8 +238,16 @@ export const setupSockets = (io: Server) => {
       socket.emit("activeRooms", availableRooms);
     });
 
-    socket.on("leaveRoom", (roomName: string, callback: Function) => {
-      handlePlayerLeave(socket, roomName, callback);
+    socket.on("leaveRoom", async (roomName: string, callback: Function) => {
+      try {
+        await handlePlayerLeave(socket, roomName, callback);
+        socket.leave(roomName);
+        if (callback) {
+          callback({ success: false, message: "failed to leave room" });
+        }
+      } catch (error) {
+        console.error(error);
+      }
     });
 
     socket.on("disconnect", () => {
@@ -249,7 +259,7 @@ export const setupSockets = (io: Server) => {
       });
     });
 
-    function handlePlayerLeave(
+    async function handlePlayerLeave(
       socket: Socket,
       roomName: string,
       callback?: Function
@@ -264,17 +274,18 @@ export const setupSockets = (io: Server) => {
       }
 
       const room = availableRooms[roomIndex];
+      console.log("current room state", room);
       const playerIndex = room.players.findIndex(
         (p) => p.socketId === socket.id
       );
 
       if (playerIndex === -1) {
-        if (callback)
-          callback({ success: false, message: "Player not found in room" });
+        console.log(`Player not found inside room ${socket.id}`);
         return;
       }
       room.players.splice(playerIndex, 1);
       room.playerCount--;
+      console.log(`updating ${room} with disconnect/leaver`);
 
       // if (room.turnTimer && room.players.length === 0) {
       //   clearTimeout(room.turnTimer);
@@ -283,7 +294,10 @@ export const setupSockets = (io: Server) => {
         availableRooms.splice(roomIndex, 1);
       }
       io.emit("activeRooms", availableRooms);
-      io.to(roomName).emit("playerLeft", room.players);
+      io.to(roomName).emit("playerLeft", {
+        players: room.players,
+        leftPlayerId: socket.id,
+      });
 
       if (callback)
         callback({ success: true, message: "Successfully left the room" });
@@ -291,28 +305,6 @@ export const setupSockets = (io: Server) => {
       console.log(`Player ${socket.id} left room: ${roomName}`);
     }
 
-    socket.on("disconnect", () => {
-      const socketRooms = Array.from(socket.rooms);
-      socketRooms.forEach((roomName) => {
-        if (roomName !== socket.id) {
-          const roomIndex = availableRooms.findIndex(
-            (r) => r.roomName === roomName
-          );
-          if (roomIndex !== -1) {
-            availableRooms[roomIndex].playerCount--;
-
-            if (availableRooms[roomIndex].playerCount <= 0) {
-              availableRooms.splice(roomIndex, 1);
-            }
-            io.emit("activeRooms", availableRooms);
-            io.to(roomName).emit("playerLeft", {
-              roomName,
-              playerCount: availableRooms[roomIndex]?.playerCount || 0,
-            });
-          }
-        }
-      });
-    });
     //   function startTurn(io: Server, room: Room) {
     //     const currentPlayer = room.players[room.currentTurnIndex];
 
