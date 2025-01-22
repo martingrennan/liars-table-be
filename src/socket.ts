@@ -328,22 +328,22 @@ export const setupSockets = (io: Server) => {
       ({ roomName, discardedCards }, callback: Function) => {
         try {
           const room = availableRooms.find((r) => r.roomName === roomName);
-          console.log(room?.isGameStarted, "In DiscardPile Socket");
+          console.log("Current discard pile size:", room?.discardPile.length);
+
           if (!room || !room.isGameStarted) {
             callback({ success: false, message: "Game not in progress" });
             return;
           }
-
-          // Ensure discardedCards is an array
           if (!Array.isArray(discardedCards)) {
             callback({ success: false, message: "Invalid discard data" });
             return;
           }
+          room.discardPile = [...room.discardPile, ...discardedCards];
 
-          // Add cards to discard pile
-          room.discardPile.push(...discardedCards);
+          console.log("Updated discard pile size:", room.discardPile.length);
+          console.log("Latest discarded cards:", discardedCards.length);
 
-          // Emit updated discard pile to all players in room
+          // Emit the FULL discard pile to all players
           io.to(roomName).emit("discardPileUpdated", {
             discardPile: room.discardPile,
             lastDiscarded: discardedCards,
