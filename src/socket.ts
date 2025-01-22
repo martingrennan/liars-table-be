@@ -332,6 +332,12 @@ export const setupSockets = (io: Server) => {
             return;
           }
 
+          // Ensure discardedCards is an array
+          if (!Array.isArray(discardedCards)) {
+            callback({ success: false, message: "Invalid discard data" });
+            return;
+          }
+
           // Add cards to discard pile
           room.discardPile.push(...discardedCards);
 
@@ -343,6 +349,7 @@ export const setupSockets = (io: Server) => {
 
           callback({ success: true });
         } catch (error) {
+          console.error("Error in discardPile:", error);
           callback({
             success: false,
             message: "Failed to update discard pile",
