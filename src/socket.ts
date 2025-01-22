@@ -4,7 +4,7 @@ interface Player {
   socketId: string;
   username: string;
   avatar: string;
-  hand: any[];
+  cardCount: number;
 }
 
 interface Room {
@@ -120,7 +120,7 @@ export const setupSockets = (io: Server) => {
             socketId: socket.id,
             username,
             avatar,
-            hand: [],
+            cardCount: 0,
           };
 
           // Add player to room
@@ -198,7 +198,7 @@ export const setupSockets = (io: Server) => {
             socketId: socket.id,
             username,
             avatar,
-            hand: [],
+            cardCount: 0,
           };
           const newRoom: Room = {
             roomName,
