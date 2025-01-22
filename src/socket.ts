@@ -327,21 +327,40 @@ export const setupSockets = (io: Server) => {
       "discardPile",
       ({ roomName, discardedCards }, callback: Function) => {
         try {
+          console.log("Received discardPile event:", {
+            roomName,
+            cardsToDiscard: discardedCards?.length,
+          });
+
           const room = availableRooms.find((r) => r.roomName === roomName);
-          console.log("Current discard pile size:", room?.discardPile.length);
+          console.log("Found room:", {
+            name: room?.roomName,
+            currentDiscardSize: room?.discardPile?.length,
+            isGameStarted: room?.isGameStarted,
+          });
 
           if (!room || !room.isGameStarted) {
+            console.log("Game not in progress or room not found");
             callback({ success: false, message: "Game not in progress" });
             return;
           }
+
+          // Ensure discardedCards is an array
           if (!Array.isArray(discardedCards)) {
+            console.log("Invalid discard data - not an array");
             callback({ success: false, message: "Invalid discard data" });
             return;
           }
+
+          // Add cards to room's discard pile
+          const oldLength = room.discardPile.length;
           room.discardPile = [...room.discardPile, ...discardedCards];
 
-          console.log("Updated discard pile size:", room.discardPile.length);
-          console.log("Latest discarded cards:", discardedCards.length);
+          console.log("Discard pile updated:", {
+            oldSize: oldLength,
+            newSize: room.discardPile.length,
+            added: discardedCards.length,
+          });
 
           // Emit the FULL discard pile to all players
           io.to(roomName).emit("discardPileUpdated", {
@@ -349,6 +368,7 @@ export const setupSockets = (io: Server) => {
             lastDiscarded: discardedCards,
           });
 
+          console.log("Emitted discardPileUpdated event");
           callback({ success: true });
         } catch (error) {
           console.error("Error in discardPile:", error);
