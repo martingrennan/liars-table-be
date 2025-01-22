@@ -272,7 +272,7 @@ export const setupSockets = (io: Server) => {
         }
 
         // Only start if we have at least 2 players
-        if (room.playerCount < 4) {
+        if (room.playerCount < 2) {
           callback({
             success: false,
             message: "Need all players to start",
