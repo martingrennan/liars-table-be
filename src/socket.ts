@@ -388,6 +388,35 @@ export const setupSockets = (io: Server) => {
       }
     });
 
+    socket.on(
+      "updateCardCount",
+      ({ roomName, cardCount }, callback: Function) => {
+        try {
+          const room = availableRooms.find((r) => r.roomName === roomName);
+          if (!room || !room.isGameStarted) {
+            callback({ success: false, message: "Game not in progress" });
+            return;
+          }
+
+          const player = room.players.find((p) => p.socketId === socket.id);
+          if (player) {
+            player.cardCount = cardCount;
+
+            // Emit updated player info to everyone in room
+            io.to(roomName).emit("playerStatsUpdated", {
+              players: room.players,
+            }); // update the playingTAble component so that it now takes the player.cardCount to display their hand amount to everyone in the lobby.
+
+            callback({ success: true });
+          } else {
+            callback({ success: false, message: "Player not found" });
+          }
+        } catch (error) {
+          callback({ success: false, message: "Failed to update card count" });
+        }
+      }
+    );
+
     socket.on("leaveRoom", async (roomName: string, callback: Function) => {
       try {
         await handlePlayerLeave(socket, roomName, callback);
