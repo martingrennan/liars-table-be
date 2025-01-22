@@ -432,7 +432,6 @@ export const setupSockets = (io: Server) => {
       "distributeCards",
       ({ roomName, hands }: { roomName: string; hands: Card[][] }) => {
         try {
-          // Find the room.
           const room = availableRooms.find((r) => r.roomName === roomName);
 
           if (!room) {
@@ -440,23 +439,20 @@ export const setupSockets = (io: Server) => {
             return;
           }
 
-          // Ensure the number of players matches the hands provided.
           if (room.players.length !== hands.length) {
             console.error("Mismatch between players and card hands.");
             return;
           }
-
-          // Assign cards to each player.
           room.players.forEach((player, index) => {
             player.hand = hands[index];
             player.cardCount = hands[index].length;
           });
 
-          // Broadcast the updated hands back to all players in the room.
           io.to(roomName).emit("cardsDealt", {
-            players: room.players.map(({ username, cardCount }) => ({
+            players: room.players.map(({ username, cardCount, hand }) => ({
               username,
-              cardCount, // Optionally send cardCount only.
+              cardCount,
+              hand,
             })),
           });
 
