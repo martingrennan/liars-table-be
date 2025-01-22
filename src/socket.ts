@@ -5,6 +5,7 @@ interface Player {
   username: string;
   avatar: string;
   cardCount: number;
+  hand: Card[];
 }
 
 interface Room {
@@ -35,6 +36,14 @@ interface LastPlayerTracker {
   // Idea is to scope a variable that tracks whoever last finished a turn. We can use this for a function that updates at the end of ever turn. Ready for scoping for the challenge socket.
   socketId: string;
   roomName: string;
+}
+
+interface Card {
+  code: string;
+  image: string;
+  images: object;
+  suit: string;
+  value: string;
 }
 
 let lastPlayerMoves: { [roomName: string]: string } = {};
@@ -121,6 +130,7 @@ export const setupSockets = (io: Server) => {
             username,
             avatar,
             cardCount: 0,
+            hand: [],
           };
 
           // Add player to room
@@ -199,6 +209,7 @@ export const setupSockets = (io: Server) => {
             username,
             avatar,
             cardCount: 0,
+            hand: [],
           };
           const newRoom: Room = {
             roomName,
@@ -416,6 +427,62 @@ export const setupSockets = (io: Server) => {
         }
       }
     );
+    // for sending the card to players
+    socket.on(
+      "distributeCards",
+      ({ roomName, hands }: { roomName: string; hands: Card[][] }) => {
+        try {
+          // Find the room.
+          const room = availableRooms.find((r) => r.roomName === roomName);
+
+          if (!room) {
+            console.error("Room not found:", roomName);
+            return;
+          }
+
+          // Ensure the number of players matches the hands provided.
+          if (room.players.length !== hands.length) {
+            console.error("Mismatch between players and card hands.");
+            return;
+          }
+
+          // Assign cards to each player.
+          room.players.forEach((player, index) => {
+            player.hand = hands[index];
+            player.cardCount = hands[index].length;
+          });
+
+          // Broadcast the updated hands back to all players in the room.
+          io.to(roomName).emit("cardsDealt", {
+            players: room.players.map(({ username, cardCount }) => ({
+              username,
+              cardCount, // Optionally send cardCount only.
+            })),
+          });
+
+          console.log(`Cards distributed for room: ${roomName}`);
+        } catch (error) {
+          console.error("Error distributing cards:", error);
+        }
+      }
+    );
+
+    socket.on("getRoomInfo", (roomName: string, callback: Function) => {
+      try {
+        const room = availableRooms.find((r) => r.roomName === roomName);
+        if (room) {
+          console.log("Found room:", room);
+          socket.emit("roomInfo", room);
+          callback({ success: true });
+        } else {
+          console.log("Room not found:", roomName);
+          callback({ success: false, message: "Room not found" });
+        }
+      } catch (error) {
+        console.error("Error getting room info:", error);
+        callback({ success: false, message: "Error fetching room info" });
+      }
+    });
 
     socket.on("leaveRoom", async (roomName: string, callback: Function) => {
       try {
