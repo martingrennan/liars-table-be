@@ -14,6 +14,8 @@ interface Room {
   playerCount: number;
   players: Player[];
   currentTurnIndex: number;
+  isGameStarted: boolean; // Adding for turn management testing.
+  discardPile: any[];
 }
 
 // Moved this here to store rooms at module level to persist across connections - previously i accidentally placed it inside the io.on
@@ -25,7 +27,17 @@ availableRooms.push({
   playerCount: 0,
   players: [],
   currentTurnIndex: 0,
+  isGameStarted: false,
+  discardPile: [],
 });
+
+interface LastPlayerTracker {
+  // Idea is to scope a variable that tracks whoever last finished a turn. We can use this for a function that updates at the end of ever turn. Ready for scoping for the challenge socket.
+  socketId: string;
+  roomName: string;
+}
+
+let lastPlayerMoves: { [roomName: string]: string } = {};
 
 export const setupSockets = (io: Server) => {
   io.on("connection", (socket: Socket) => {
@@ -195,6 +207,8 @@ export const setupSockets = (io: Server) => {
             playerCount: 1,
             players: [firstPlayer], // Add the creator as first player
             currentTurnIndex: 0,
+            isGameStarted: false,
+            discardPile: [],
           };
           availableRooms.push(newRoom);
           await socket.join(roomName);
@@ -236,6 +250,142 @@ export const setupSockets = (io: Server) => {
       console.log("Active rooms requested");
       logRooms();
       socket.emit("activeRooms", availableRooms);
+    });
+
+    socket.on("startGame", (roomName: string, callback: Function) => {
+      try {
+        const room = availableRooms.find((r) => r.roomName === roomName);
+        if (!room) {
+          callback({ success: false, message: "Room not found" });
+          return;
+        }
+
+        // Only start if we have at least 2 players
+        if (room.playerCount < 4) {
+          callback({
+            success: false,
+            message: "Need all players to start",
+          });
+          return;
+        }
+
+        room.isGameStarted = true;
+        room.currentTurnIndex = 0;
+        const currentPlayer = room.players[room.currentTurnIndex];
+        io.to(roomName).emit("turnUpdate", {
+          currentPlayer: currentPlayer,
+          currentTurnIndex: room.currentTurnIndex,
+        });
+
+        callback({ success: true });
+      } catch (error) {
+        callback({ success: false, message: "Failed to start game" });
+      }
+    });
+
+    socket.on("endTurn", (roomName: string, callback: Function) => {
+      try {
+        const room = availableRooms.find((r) => r.roomName === roomName);
+        if (!room || !room.isGameStarted) {
+          callback({ success: false, message: "Game not in progress" });
+          return;
+        }
+
+        // Scope the last player info for the challenge button before processing the end turn.
+        lastPlayerMoves[roomName] =
+          room.players[room.currentTurnIndex].socketId;
+
+        room.currentTurnIndex =
+          (room.currentTurnIndex + 1) % room.players.length;
+        const nextPlayer = room.players[room.currentTurnIndex];
+
+        io.to(roomName).emit("turnUpdate", {
+          currentPlayer: nextPlayer,
+          currentTurnIndex: room.currentTurnIndex,
+          lastPlayer: lastPlayerMoves[roomName], // include this in the emit.
+        });
+
+        callback({ success: true });
+      } catch (error) {
+        callback({ success: false, message: "Failed to end turn" });
+      }
+    });
+
+    socket.on(
+      "discardPile",
+      ({ roomName, discardedCards }, callback: Function) => {
+        try {
+          const room = availableRooms.find((r) => r.roomName === roomName);
+          if (!room || !room.isGameStarted) {
+            callback({ success: false, message: "Game not in progress" });
+            return;
+          }
+
+          // Add cards to discard pile
+          room.discardPile.push(...discardedCards);
+
+          // Emit updated discard pile to all players in room
+          io.to(roomName).emit("discardPileUpdated", {
+            discardPile: room.discardPile,
+            lastDiscarded: discardedCards,
+          });
+
+          callback({ success: true });
+        } catch (error) {
+          callback({
+            success: false,
+            message: "Failed to update discard pile",
+          });
+        }
+      }
+    );
+
+    socket.on("initiateDuel", ({ roomName }, callback: Function) => {
+      // remember to ge the challengePlayerId from whoever turn it was from the array index.
+      try {
+        const room = availableRooms.find((r) => r.roomName === roomName);
+        if (!room || !room.isGameStarted) {
+          callback({ success: false, message: "Game not in progress" });
+          return;
+        }
+
+        // logic for working out who the last player was. IN theory the logic below should gie us a condition where if player 4 went last, then player 1 channelged,, the modulo should be as follows: (0 - 1 + 4) % 4 = 3
+        // need to test this out.
+
+        const lastPlayerSocketId = lastPlayerMoves[roomName];
+        if (!lastPlayerSocketId) {
+          callback({
+            success: false,
+            message: "No previous moves in this room",
+          });
+          return;
+        }
+
+        // Remember this is the code that works out who the challenger is and the duel is below it.
+        const challenger = room.players.find((p) => p.socketId === socket.id);
+        const challengedPlayer = room.players.find(
+          (p) => p.socketId === lastPlayerSocketId
+        );
+
+        if (!challenger || !challengedPlayer) {
+          // typescript error handling because of null stuff.
+          callback({ success: false, message: "Invalid players for duel" });
+          return;
+        }
+        io.to(lastPlayerSocketId).emit("duelStarted", {
+          challenger: challenger.username,
+          challengerId: challenger.socketId,
+        });
+
+        io.to(roomName).emit("duelInitiated", {
+          challenger: challenger.username,
+          challenged: challengedPlayer.username,
+        });
+
+        callback({ success: true });
+      } catch (error) {
+        callback({ success: false, message: "Failed to initiate duel" });
+      }
     });
 
     socket.on("leaveRoom", async (roomName: string, callback: Function) => {
@@ -287,9 +437,17 @@ export const setupSockets = (io: Server) => {
       room.playerCount--;
       console.log(`updating ${room} with disconnect/leaver`);
 
-      // if (room.turnTimer && room.players.length === 0) {
-      //   clearTimeout(room.turnTimer);
-      // }
+      if (room.isGameStarted && playerIndex <= room.currentTurnIndex) {
+        if (playerIndex === room.currentTurnIndex) {
+          room.currentTurnIndex = room.currentTurnIndex % room.players.length;
+          io.to(roomName).emit("turnUpdate", {
+            currentPlayer: room.players[room.currentTurnIndex],
+            currentTurnIndex: room.currentTurnIndex,
+          });
+        } else {
+          room.currentTurnIndex--;
+        }
+      }
       if (room.playerCount <= 0) {
         availableRooms.splice(roomIndex, 1);
       }
@@ -304,20 +462,5 @@ export const setupSockets = (io: Server) => {
 
       console.log(`Player ${socket.id} left room: ${roomName}`);
     }
-
-    //   function startTurn(io: Server, room: Room) {
-    //     const currentPlayer = room.players[room.currentTurnIndex];
-
-    //     io.to(currentPlayer.socketId).emit("yourTurn", true);
-    //     io.to(room.roomName).emit("updateTurn", currentPlayer);
-
-    //     room.turnTimer = setTimeout(() => {
-    //       io.to(currentPlayer.socketId).emit("turnTimedOut");
-    //       room.currentTurnIndex =
-    //         (room.currentTurnIndex + 1) % room.players.length;
-    //       startTurn(io, room);
-    //     }, 10000);
-    //   }
-    // });
   });
 };
