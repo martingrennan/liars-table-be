@@ -321,6 +321,25 @@ export const setupSockets = (io: Server) => {
       } catch (error) {
         callback({ success: false, message: "Failed to end turn" });
       }
+      // Here is the code for the new card to play each turn once the turn actually ends
+      const order = [
+        "ACE",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "JACK",
+        "QUEEN",
+        "KING",
+      ];
+      const cardThisTurn = order[Math.floor(Math.random() * 13)];
+      console.log(cardThisTurn);
+      socket.emit("cardToPlay", cardThisTurn);
     });
 
     socket.on(
