@@ -435,31 +435,29 @@ export const setupSockets = (io: Server) => {
             return;
           }
 
-          console.log("Before distribution:", {
-            discardPile: room.discardPile.length,
-            lastPlayerHand: lastPlayer.hand.length,
-            challengerHand: challenger.hand.length,
-          });
-
-          // Distribute cards based on bullshit check
+          // Determine loser and merge hands
           if (room.isBullshit) {
-            lastPlayer.hand = room.discardPile.slice();
-            lastPlayer.cardCount = lastPlayer.hand.length;
+            const mergedHand = [...lastPlayer.hand, ...room.discardPile];
+            lastPlayer.hand = [];
+            lastPlayer.hand = mergedHand;
+            lastPlayer.cardCount = mergedHand.length;
 
-            // Check if challenger won
-            if (challenger.hand.length === 0) {
-              io.to(roomName).emit("gameWon", { winner: challenger.username });
-              room.winner = challenger.username;
-            }
+            console.log("Bullshit was true - Last player gets cards:", {
+              originalHand: lastPlayer.hand.length,
+              discardPile: room.discardPile.length,
+              newTotal: mergedHand.length,
+            });
           } else {
-            challenger.hand = room.discardPile.slice();
-            challenger.cardCount = challenger.hand.length;
+            const mergedHand = [...challenger.hand, ...room.discardPile];
+            challenger.hand = [];
+            challenger.hand = mergedHand;
+            challenger.cardCount = mergedHand.length;
 
-            // Check if last player won
-            if (lastPlayer.hand.length === 0) {
-              io.to(roomName).emit("gameWon", { winner: lastPlayer.username });
-              room.winner = lastPlayer.username;
-            }
+            console.log("Bullshit was false - Challenger gets cards:", {
+              originalHand: challenger.hand.length,
+              discardPile: room.discardPile.length,
+              newTotal: mergedHand.length,
+            });
           }
 
           room.discardPile = [];
