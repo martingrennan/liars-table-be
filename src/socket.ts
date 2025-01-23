@@ -433,53 +433,65 @@ export const setupSockets = (io: Server) => {
       }
     );
 
-    socket.on("initiateDuel", ({ roomName }, callback: Function) => {
-      // remember to ge the challengePlayerId from whoever turn it was from the array index.
-      try {
-        const room = availableRooms.find((r) => r.roomName === roomName);
-        if (!room || !room.isGameStarted) {
-          callback({ success: false, message: "Game not in progress" });
-          return;
-        }
+    socket.on(
+      "bullshitPress",
+      ({ roomName, challengerUsername }, callback: Function) => {
+        try {
+          const room = availableRooms.find((r) => r.roomName === roomName);
+          if (!room?.isGameStarted) {
+            callback({ success: false, message: "Game not in progress" });
+            return;
+          }
 
-        // logic for working out who the last player was. IN theory the logic below should gie us a condition where if player 4 went last, then player 1 channelged,, the modulo should be as follows: (0 - 1 + 4) % 4 = 3
-        // need to test this out.
+          const lastPlayerSocketId = lastPlayerMoves[roomName];
+          if (!lastPlayerSocketId) {
+            callback({ success: false, message: "No previous moves" });
+            return;
+          }
 
-        const lastPlayerSocketId = lastPlayerMoves[roomName];
-        if (!lastPlayerSocketId) {
-          callback({
-            success: false,
-            message: "No previous moves in this room",
+          const lastPlayer = room.players.find(
+            (p) => p.socketId === lastPlayerSocketId
+          );
+          const challenger = room.players.find(
+            (p) => p.username === challengerUsername
+          );
+
+          if (!lastPlayer || !challenger) {
+            callback({ success: false, message: "Players not found" });
+            return;
+          }
+
+          // Handle discard pile based on bullshit status
+          if (room.isBullshit) {
+            lastPlayer.hand = [...lastPlayer.hand, ...room.discardPile];
+            lastPlayer.cardCount = lastPlayer.hand.length;
+          } else {
+            challenger.hand = [...challenger.hand, ...room.discardPile];
+            challenger.cardCount = challenger.hand.length;
+          }
+
+          room.discardPile = [];
+
+          io.to(roomName).emit("duelResolved", {
+            // placeholder if we want to show the status of the event.
+            challenger: challengerUsername,
+            challenged: lastPlayer.username,
+            wasBullshit: room.isBullshit,
+            revealedCards: room.lastPlayedCards,
+            lastPlayerHand: lastPlayer.hand, // maybe show the hand of the suer so people know what they used?
           });
-          return;
+
+          io.to(roomName).emit("playerStatsUpdated", {
+            players: room.players,
+          });
+
+          callback({ success: true });
+        } catch (error) {
+          console.error("Error in initiateDuel:", error);
+          callback({ success: false });
         }
-
-        // Remember this is the code that works out who the challenger is and the duel is below it.
-        const challenger = room.players.find((p) => p.socketId === socket.id);
-        const challengedPlayer = room.players.find(
-          (p) => p.socketId === lastPlayerSocketId
-        );
-
-        if (!challenger || !challengedPlayer) {
-          // typescript error handling because of null stuff.
-          callback({ success: false, message: "Invalid players for duel" });
-          return;
-        }
-        io.to(lastPlayerSocketId).emit("duelStarted", {
-          challenger: challenger.username,
-          challengerId: challenger.socketId,
-        });
-
-        io.to(roomName).emit("duelInitiated", {
-          challenger: challenger.username,
-          challenged: challengedPlayer.username,
-        });
-
-        callback({ success: true });
-      } catch (error) {
-        callback({ success: false, message: "Failed to initiate duel" });
       }
-    });
+    );
 
     socket.on(
       "updateCardCount",
