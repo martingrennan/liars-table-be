@@ -438,25 +438,38 @@ export const setupSockets = (io: Server) => {
           // Clear the discard pile and merge it back to the appropriate player
           const { discardPile } = room;
           if (room.isBullshit) {
-            // Last player picks up discard pile
-            lastPlayer.hand.push(...discardPile);
+            // Only add cards from discardPile that aren't already in the hand
+            const newCards = discardPile.filter(
+              (discardedCard) =>
+                !lastPlayer.hand.some(
+                  (handCard) =>
+                    handCard.suit === discardedCard.suit &&
+                    handCard.value === discardedCard.value
+                )
+            );
+
+            lastPlayer.hand.push(...newCards);
             lastPlayer.cardCount = lastPlayer.hand.length;
 
             console.log("Bullshit was true - Last player gets cards:", {
-              originalHand: lastPlayer.hand.length - discardPile.length,
-              discardPile: discardPile.length,
+              originalHand: lastPlayer.hand.length - newCards.length,
+              discardedCards: discardPile.length,
+              newCardsAdded: newCards.length,
               newTotal: lastPlayer.hand.length,
             });
           } else {
-            // Challenger picks up discard pile
-            challenger.hand.push(...discardPile);
-            challenger.cardCount = challenger.hand.length;
+            // Same logic for challenger
+            const newCards = discardPile.filter(
+              (discardedCard) =>
+                !challenger.hand.some(
+                  (handCard) =>
+                    handCard.suit === discardedCard.suit &&
+                    handCard.value === discardedCard.value
+                )
+            );
 
-            console.log("Bullshit was false - Challenger gets cards:", {
-              originalHand: challenger.hand.length - discardPile.length,
-              discardPile: discardPile.length,
-              newTotal: challenger.hand.length,
-            });
+            challenger.hand.push(...newCards);
+            challenger.cardCount = challenger.hand.length;
           }
 
           // Clear discard pile after merging
