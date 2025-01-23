@@ -435,31 +435,31 @@ export const setupSockets = (io: Server) => {
             return;
           }
 
-          // Determine loser and merge hands
+          // Clear the discard pile and merge it back to the appropriate player
+          const { discardPile } = room;
           if (room.isBullshit) {
-            const mergedHand = [...lastPlayer.hand, ...room.discardPile];
-            lastPlayer.hand = [];
-            lastPlayer.hand = mergedHand;
-            lastPlayer.cardCount = mergedHand.length;
+            // Last player picks up discard pile
+            lastPlayer.hand = [...lastPlayer.hand, ...discardPile];
+            lastPlayer.cardCount = lastPlayer.hand.length;
 
             console.log("Bullshit was true - Last player gets cards:", {
-              originalHand: lastPlayer.hand.length,
-              discardPile: room.discardPile.length,
-              newTotal: mergedHand.length,
+              originalHand: lastPlayer.hand.length - discardPile.length,
+              discardPile: discardPile.length,
+              newTotal: lastPlayer.hand.length,
             });
           } else {
-            const mergedHand = [...challenger.hand, ...room.discardPile];
-            challenger.hand = [];
-            challenger.hand = mergedHand;
-            challenger.cardCount = mergedHand.length;
+            // Challenger picks up discard pile
+            challenger.hand = [...challenger.hand, ...discardPile];
+            challenger.cardCount = challenger.hand.length;
 
             console.log("Bullshit was false - Challenger gets cards:", {
-              originalHand: challenger.hand.length,
-              discardPile: room.discardPile.length,
-              newTotal: mergedHand.length,
+              originalHand: challenger.hand.length - discardPile.length,
+              discardPile: discardPile.length,
+              newTotal: challenger.hand.length,
             });
           }
 
+          // Clear discard pile after merging
           room.discardPile = [];
 
           io.to(roomName).emit("playerStatsUpdated", {
@@ -473,7 +473,6 @@ export const setupSockets = (io: Server) => {
         }
       }
     );
-
     socket.on(
       "updateCardCount",
       ({ roomName, cardCount }, callback: Function) => {
