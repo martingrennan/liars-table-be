@@ -439,7 +439,7 @@ export const setupSockets = (io: Server) => {
           const { discardPile } = room;
           if (room.isBullshit) {
             // Last player picks up discard pile
-            lastPlayer.hand = [...lastPlayer.hand, ...discardPile];
+            lastPlayer.hand.push(...discardPile);
             lastPlayer.cardCount = lastPlayer.hand.length;
 
             console.log("Bullshit was true - Last player gets cards:", {
@@ -449,7 +449,7 @@ export const setupSockets = (io: Server) => {
             });
           } else {
             // Challenger picks up discard pile
-            challenger.hand = [...challenger.hand, ...discardPile];
+            challenger.hand.push(...discardPile);
             challenger.cardCount = challenger.hand.length;
 
             console.log("Bullshit was false - Challenger gets cards:", {
