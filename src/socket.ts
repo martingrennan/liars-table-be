@@ -18,6 +18,8 @@ interface Room {
   isGameStarted: boolean; // Adding for turn management testing.
   discardPile: any[];
   currentCard: string;
+  lastPlayedCards: Card[]; // Track what was actually played
+  isBullshit: boolean;
 }
 
 // Moved this here to store rooms at module level to persist across connections - previously i accidentally placed it inside the io.on
@@ -31,7 +33,9 @@ availableRooms.push({
   currentTurnIndex: 0,
   isGameStarted: false,
   discardPile: [],
-  currentCard: "",
+  currentCard: "ACE",
+  lastPlayedCards: [],
+  isBullshit: false,
 });
 
 interface LastPlayerTracker {
@@ -222,7 +226,9 @@ export const setupSockets = (io: Server) => {
             currentTurnIndex: 0,
             isGameStarted: false,
             discardPile: [],
-            currentCard: "",
+            currentCard: "ACE",
+            lastPlayedCards: [],
+            isBullshit: false,
           };
           availableRooms.push(newRoom);
           await socket.join(roomName);
@@ -357,6 +363,12 @@ export const setupSockets = (io: Server) => {
             currentDiscardSize: room?.discardPile?.length,
             isGameStarted: room?.isGameStarted,
           });
+          if (room) {
+            console.log("Room state:", {
+              currentCard: room.currentCard,
+              hasCurrentCard: "currentCard" in room.lastPlayedCards,
+            });
+          }
 
           if (!room || !room.isGameStarted) {
             console.log("Game not in progress or room not found");
@@ -364,14 +376,36 @@ export const setupSockets = (io: Server) => {
             return;
           }
 
-          // Ensure discardedCards is an array
           if (!Array.isArray(discardedCards)) {
             console.log("Invalid discard data - not an array");
             callback({ success: false, message: "Invalid discard data" });
             return;
           }
 
-          // Add cards to room's discard pile
+          if (room.currentCard === undefined) {
+            console.log("No current card set");
+            callback({
+              success: false,
+              message: "No current card requirement set",
+            });
+            return;
+          }
+
+          // Add bullshit validation
+          room.lastPlayedCards = discardedCards;
+          console.log("Current card required:", room.currentCard);
+          room.isBullshit = false;
+          for (const card of discardedCards) {
+            if (card.value !== room.currentCard) {
+              console.log(
+                `Mismatch found: ${card.value} !== ${room.currentCard}`
+              );
+              room.isBullshit = true;
+              break;
+            }
+            console.log(`Card matches: ${card.value} === ${room.currentCard}`);
+          }
+
           const oldLength = room.discardPile.length;
           room.discardPile = [...room.discardPile, ...discardedCards];
 
@@ -381,10 +415,10 @@ export const setupSockets = (io: Server) => {
             added: discardedCards.length,
           });
 
-          // Emit the FULL discard pile to all players
           io.to(roomName).emit("discardPileUpdated", {
             discardPile: room.discardPile,
             lastDiscarded: discardedCards,
+            isBullshit: room.isBullshit, // Add this to emit
           });
 
           console.log("Emitted discardPileUpdated event");
