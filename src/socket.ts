@@ -20,6 +20,7 @@ interface Room {
   currentCard: string;
   lastPlayedCards: Card[]; // Track what was actually played
   isBullshit: boolean;
+  winner: string | null;
 }
 
 // Moved this here to store rooms at module level to persist across connections - previously i accidentally placed it inside the io.on
@@ -36,6 +37,7 @@ availableRooms.push({
   currentCard: "ACE",
   lastPlayedCards: [],
   isBullshit: false,
+  winner: null,
 });
 
 interface LastPlayerTracker {
@@ -229,6 +231,7 @@ export const setupSockets = (io: Server) => {
             currentCard: "ACE",
             lastPlayedCards: [],
             isBullshit: false,
+            winner: null,
           };
           availableRooms.push(newRoom);
           await socket.join(roomName);
@@ -358,77 +361,48 @@ export const setupSockets = (io: Server) => {
           });
 
           const room = availableRooms.find((r) => r.roomName === roomName);
-          console.log("Found room:", {
-            name: room?.roomName,
-            currentDiscardSize: room?.discardPile?.length,
-            isGameStarted: room?.isGameStarted,
-          });
-          if (room) {
-            console.log("Room state:", {
-              currentCard: room.currentCard,
-              hasCurrentCard: "currentCard" in room.lastPlayedCards,
-            });
-          }
-
           if (!room || !room.isGameStarted) {
-            console.log("Game not in progress or room not found");
             callback({ success: false, message: "Game not in progress" });
             return;
           }
 
-          if (!Array.isArray(discardedCards)) {
-            console.log("Invalid discard data - not an array");
-            callback({ success: false, message: "Invalid discard data" });
+          if (!Array.isArray(discardedCards) || !room.currentCard) {
+            callback({ success: false, message: "Invalid data" });
             return;
           }
 
-          if (room.currentCard === undefined) {
-            console.log("No current card set");
-            callback({
-              success: false,
-              message: "No current card requirement set",
-            });
-            return;
-          }
-
-          // Add bullshit validation
+          // Validate and update discard pile
           room.lastPlayedCards = discardedCards;
-          console.log("Current card required:", room.currentCard);
           room.isBullshit = false;
           for (const card of discardedCards) {
             if (card.value !== room.currentCard) {
-              console.log(
-                `Mismatch found: ${card.value} !== ${room.currentCard}`
-              );
+              console.log(`Mismatch: ${card.value} !== ${room.currentCard}`);
               room.isBullshit = true;
               break;
             }
-            console.log(`Card matches: ${card.value} === ${room.currentCard}`);
           }
 
-          const oldLength = room.discardPile.length;
           room.discardPile = [...room.discardPile, ...discardedCards];
 
-          console.log("Discard pile updated:", {
-            oldSize: oldLength,
-            newSize: room.discardPile.length,
-            added: discardedCards.length,
-          });
+          // Check win condition
+          const currentPlayer = room.players[room.currentTurnIndex];
+          if (currentPlayer.hand.length === 0) {
+            io.to(roomName).emit("gameWon", {
+              winner: currentPlayer.username,
+            });
+            room.winner = currentPlayer.username;
+          }
 
           io.to(roomName).emit("discardPileUpdated", {
             discardPile: room.discardPile,
             lastDiscarded: discardedCards,
-            isBullshit: room.isBullshit, // Add this to emit
+            isBullshit: room.isBullshit,
           });
 
-          console.log("Emitted discardPileUpdated event");
           callback({ success: true });
         } catch (error) {
           console.error("Error in discardPile:", error);
-          callback({
-            success: false,
-            message: "Failed to update discard pile",
-          });
+          callback({ success: false });
         }
       }
     );
@@ -461,25 +435,34 @@ export const setupSockets = (io: Server) => {
             return;
           }
 
-          // Handle discard pile based on bullshit status
+          console.log("Before distribution:", {
+            discardPile: room.discardPile.length,
+            lastPlayerHand: lastPlayer.hand.length,
+            challengerHand: challenger.hand.length,
+          });
+
+          // Distribute cards based on bullshit check
           if (room.isBullshit) {
-            lastPlayer.hand = [...lastPlayer.hand, ...room.discardPile];
+            lastPlayer.hand = room.discardPile.slice();
             lastPlayer.cardCount = lastPlayer.hand.length;
+
+            // Check if challenger won
+            if (challenger.hand.length === 0) {
+              io.to(roomName).emit("gameWon", { winner: challenger.username });
+              room.winner = challenger.username;
+            }
           } else {
-            challenger.hand = [...challenger.hand, ...room.discardPile];
+            challenger.hand = room.discardPile.slice();
             challenger.cardCount = challenger.hand.length;
+
+            // Check if last player won
+            if (lastPlayer.hand.length === 0) {
+              io.to(roomName).emit("gameWon", { winner: lastPlayer.username });
+              room.winner = lastPlayer.username;
+            }
           }
 
           room.discardPile = [];
-
-          io.to(roomName).emit("duelResolved", {
-            // placeholder if we want to show the status of the event.
-            challenger: challengerUsername,
-            challenged: lastPlayer.username,
-            wasBullshit: room.isBullshit,
-            revealedCards: room.lastPlayedCards,
-            lastPlayerHand: lastPlayer.hand, // maybe show the hand of the suer so people know what they used?
-          });
 
           io.to(roomName).emit("playerStatsUpdated", {
             players: room.players,
@@ -487,7 +470,7 @@ export const setupSockets = (io: Server) => {
 
           callback({ success: true });
         } catch (error) {
-          console.error("Error in initiateDuel:", error);
+          console.error("Error in bullshitPress:", error);
           callback({ success: false });
         }
       }
